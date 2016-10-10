@@ -4,10 +4,10 @@ import (
 	"net/http"
 )
 
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
-
+// HomeHandler handles the home url of the discovery service
+func (h *Handler) HomeHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r,
-		"https://coreos.com/docs/cluster-management/setup/cluster-discovery/",
+		"https://github.com/quantum/discovery",
 		http.StatusMovedPermanently,
 	)
 }

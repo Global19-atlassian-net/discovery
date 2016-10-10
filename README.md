@@ -1,31 +1,47 @@
-# discovery.etcd.io
+# Discovery Service
 
-This code powers the public service at https://discovery.etcd.io. The API is
-documented in the [etcd clustering documentation](https://github.com/coreos/etcd/blob/master/Documentation/dev-internal/discovery_protocol.md#public-discovery-service).
+The `discovery.etcd.io` package is only usable during the initial bootstrap of the etcd cluster. We extended this package to support for dynamic maintenance of
+cluster membership while keeping it backward-compatible with the original package.
+
+
+# APIs
+- `GET /new?size=N` : returns a clsuter ID for bootstrapping a cluster of size *N*
+- `GET /members/CLUSTER_TOKEN` : returns a comma-separated list of *latest* members of the cluster.
+- `POST /renew`: this API is called by a cluster manager periodically to update the etcd cluster's latest quorum members.
+- `GET /health` : returns the health of the discovdery service. the output is *OK* or an error message.
+- `GET /CLUSTER_TOKEN/{machine}` : this is used by etcd instances to form a quorum during the bootstrap process.
 
 # Configuration
 
-The service has three configuration options, and can be configured with either
-runtime arguments or environment variables.
+The service has three configuration options, and can be configured with runtime arguments.
 
-* `--addr` / `DISC_ADDR`: the address to run the service on, including port.
-* `--host` / `DISC_HOST`: the host url to prepend to `/new` requests.
-* `--etcd` / `DISC_ETCD`: the url of the etcd endpoint backing the instance.
+* `--etcd-urls` / `DISC_ETCD_URLS`: comma separated list of backend etcd cluster members. Default value is set to `"http://127.0.0.1:2379"`
+* `--addr` / `DISC_ADDR`: address:port of the discovery service.
+
 
 ## Docker Container
 
 You may run the service in a docker container:
 
 ```
-docker pull quay.io/coreos/discovery.etcd.io
-docker run -d -p 80:8087 -e DISC_ETCD=http://etcd.example.com:2379 -e DISC_HOST=http://discovery.example.com quay.io/coreos/discovery.etcd.io
+docker pull quantum/discovery
+docker run -d -p 80:8087 -e DISC_ADDR=... -e DISC_ETCD_URLS=... quantum/discovery
 ```
+
 
 ## Development
 
-discovery.etcd.io uses devweb for easy development. It is simple to get started:
+The discovery service uses gin for easy development. It is simple to get started:
+
+install: `go get github.com/codegangsta/gin`
 
 ```
-./devweb
-curl --verbose -X PUT localhost:8087/new
+cd cmd
+gin -appPort 8087
+curl --verbose -X PUT localhost:3000/new
 ```
+
+# Discussion
+
+- This implementation provides security by obscurity.
+
