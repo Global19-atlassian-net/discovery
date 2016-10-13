@@ -1,8 +1,8 @@
 FROM golang:1.6
-MAINTAINER "CoreOS, Inc"
+MAINTAINER "Quantum, Inc"
 EXPOSE 8087
 
-COPY . /go/src/github.com/coreos/discovery.etcd.io
-RUN go install -v github.com/coreos/discovery.etcd.io
+COPY . /go/src/github.com/quantum/discovery
+RUN go install -v github.com/quantum/discovery
 
-CMD ["discovery.etcd.io"]
+CMD ["discovery"]

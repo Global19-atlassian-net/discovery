@@ -11,27 +11,23 @@ import (
 	"net/url"
 	"path"
 	"strconv"
-	"time"
 
-	"github.com/coreos/discovery.etcd.io/handlers/httperror"
 	"github.com/coreos/etcd/client"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
+	"github.com/quantum/discovery/pkg/lockstring"
+	ctx "golang.org/x/net/context"
 )
 
-var newCounter *prometheus.CounterVec
-var cfg *client.Config
-var discHost string
+const DefaultLeaderHost = "127.0.0.1:2379"
+
+var (
+	cfg           *client.Config
+	discHost      string
+	currentLeader lockstring.LockString
+	etcdMachines  []string
+)
 
 func init() {
-	newCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "endpoint_new_requests_total",
-			Help: "How many /new requests processed, partitioned by status code and HTTP method.",
-		},
-		[]string{"code", "method"},
-	)
-	prometheus.MustRegister(newCounter)
+	currentLeader.Set(DefaultLeaderHost)
 }
 
 func generateCluster() string {
@@ -44,48 +40,39 @@ func generateCluster() string {
 	return hex.EncodeToString(b)
 }
 
-func Setup(etcdHost, disc string) {
-	cfg = &client.Config{
-		Endpoints: []string{etcdHost},
-		Transport: client.DefaultTransport,
-		// set timeout per request to fail fast when the target endpoint is unavailable
-		HeaderTimeoutPerRequest: time.Second,
+func Setup(host string) error {
+	u, err := url.Parse(host)
+	if err != nil {
+		return err
 	}
-
-	u, _ := url.Parse(etcdHost)
 	currentLeader.Set(u.Host)
-	discHost = disc
+	discHost = host
+	return nil
 }
 
-func setupToken(size int) (string, error) {
+func (h *Handler) setupToken(size int) (string, error) {
 	token := generateCluster()
 	if token == "" {
 		return "", errors.New("Couldn't generate a token")
 	}
 
-	c, _ := client.New(*cfg)
-	kapi := client.NewKeysAPI(c)
-
 	key := path.Join("_etcd", "registry", token)
 
-	resp, err := kapi.Create(context.Background(), path.Join(key, "_config", "size"), strconv.Itoa(size))
+	resp, err := h.EtcdClient.Create(ctx.Background(), path.Join(key, "_config", "size"), strconv.Itoa(size))
 	if err != nil {
-		return "", errors.New(fmt.Sprintf("Couldn't setup state %v %v", resp, err))
+		return "", fmt.Errorf("Couldn't setup state. resp: %+v | err: %+v", resp, err)
 	}
 
 	return token, nil
 }
 
-func deleteToken(token string) error {
-	c, _ := client.New(*cfg)
-	kapi := client.NewKeysAPI(c)
-
+func (h *Handler) deleteToken(token string) error {
 	if token == "" {
 		return errors.New("No token given")
 	}
 
-	_, err := kapi.Delete(
-		context.Background(),
+	_, err := h.EtcdClient.Delete(
+		ctx.Background(),
 		path.Join("_etcd", "registry", token),
 		&client.DeleteOptions{Recursive: true},
 	)
@@ -93,27 +80,25 @@ func deleteToken(token string) error {
 	return err
 }
 
-func NewTokenHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) NewTokenHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	size := 3
 	s := r.FormValue("size")
 	if s != "" {
 		size, err = strconv.Atoi(s)
 		if err != nil {
-			httperror.Error(w, r, err.Error(), http.StatusBadRequest, newCounter)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
-	token, err := setupToken(size)
+	token, err := h.setupToken(size)
 
 	if err != nil {
 		log.Printf("setupToken returned: %v", err)
-		httperror.Error(w, r, "Unable to generate token", 400, newCounter)
+		http.Error(w, "Unable to generate token", 400)
 		return
 	}
 
 	log.Println("New cluster created", token)
-
 	fmt.Fprintf(w, "%s/%s", bytes.TrimRight([]byte(discHost), "/"), token)
-	newCounter.WithLabelValues("200", r.Method).Add(1)
 }

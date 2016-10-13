@@ -4,40 +4,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-
-	"github.com/coreos/discovery.etcd.io/handlers/httperror"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
-var healthCounter *prometheus.CounterVec
-
-func init() {
-	healthCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "endpoint_health_requests_total",
-			Help: "How many /health requests processed, partitioned by status code and HTTP method.",
-		},
-		[]string{"code", "method"},
-	)
-	prometheus.MustRegister(healthCounter)
-}
-
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	token, err := setupToken(0)
+// HealthHandler checks weather the discovery service is in a healthy status
+func (h Handler) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	token, err := h.setupToken(0)
 
 	if err != nil || token == "" {
-		log.Printf("health failed to setupToken %v", err)
-		httperror.Error(w, r, "health failed to setupToken", 400, healthCounter)
+		log.Printf("health failed to setup token %v", err)
+		http.Error(w, "health failed to setup token", 400)
 		return
 	}
 
-	err = deleteToken(token)
+	err = h.deleteToken(token)
 	if err != nil {
-		log.Printf("health failed to deleteToken %v", err)
-		httperror.Error(w, r, "health failed to deleteToken", 400, healthCounter)
+		log.Printf("health failed to delete token %v", err)
+		http.Error(w, "health failed to delete token", 400)
 		return
 	}
 
 	fmt.Fprintf(w, "OK")
-	healthCounter.WithLabelValues("200", r.Method).Add(1)
 }
